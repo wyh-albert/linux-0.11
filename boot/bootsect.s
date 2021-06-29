@@ -85,7 +85,7 @@ ok_load_setup:
 	int	0x13
 	mov	ch,#0x00
 	seg cs
-	mov	sectors,cx
+	mov	sectors,cx		!将cx的值（扇区数)保存在cs:[sectors](即9000:0000处)
 	mov	ax,#INITSEG
 	mov	es,ax
 
@@ -117,7 +117,7 @@ ok_load_setup:
 	seg cs
 	mov	ax,root_dev
 	cmp	ax,#0
-	jne	root_defined
+	jne	root_defined	! 判断root_dev是否被定义
 	seg cs
 	mov	bx,sectors
 	mov	ax,#0x0208		! /dev/ps0 - 1.2Mb
@@ -150,33 +150,33 @@ track:	.word 0			! current track
 
 read_it:
 	mov ax,es
-	test ax,#0x0fff
-die:	jne die			! es must be at 64kB boundary
+	test ax,#0x0fff		!与操作，操作结果只影响（零标志位ZF等)
+die:	jne die			! es must be at 64kB boundary，jne判断ZF不等于0，则跳转
 	xor bx,bx		! bx is starting address within segment
 rp_read:
 	mov ax,es
-	cmp ax,#ENDSEG		! have we loaded all yet?
-	jb ok1_read
+	cmp ax,#ENDSEG		! have we loaded all yet?,判断system是否加载完毕
+	jb ok1_read			! ax小于ENDSEG则跳转
 	ret
 ok1_read:
 	seg cs
-	mov ax,sectors
-	sub ax,sread
+	mov ax,sectors		! 将磁盘的磁道扇区数cs:[sector](即9000:0000)处的值给ax寄存器
+	sub ax,sread		! sread表示已使用的扇区数：1个扇区(bootsect)+4个扇区(setup)
 	mov cx,ax
-	shl cx,#9
+	shl cx,#9			! 逻辑左移9位，即乘以512
 	add cx,bx
-	jnc ok2_read
-	je ok2_read
+	jnc ok2_read		! jnc表示没有发生进位跳转
+	je ok2_read			! je 表示zf为0，发生跳转
 	xor ax,ax
 	sub ax,bx
-	shr ax,#9
+	shr ax,#9			! 逻辑右移
 ok2_read:
-	call read_track
-	mov cx,ax
-	add ax,sread
+	call read_track		! 读取磁盘数据
+	mov cx,ax			! al保存着本次读取的扇区数
+	add ax,sread		! 总共读取的扇区数
 	seg cs
-	cmp ax,sectors
-	jne ok3_read
+	cmp ax,sectors		! 比较ax与cs：[sectors](即9000:0000)
+	jne ok3_read		! 不相等
 	mov ax,#1
 	sub ax,head
 	jne ok4_read
@@ -185,12 +185,12 @@ ok4_read:
 	mov head,ax
 	xor ax,ax
 ok3_read:
-	mov sread,ax
+	mov sread,ax		! 保存已读取的扇区数
 	shl cx,#9
-	add bx,cx
-	jnc rp_read
+	add bx,cx			! 调整当前段内数据开始地址
+	jnc rp_read			! 读取的数据长度没有超过64K，则跳转到rp_read继续读取
 	mov ax,es
-	add ax,#0x1000
+	add ax,#0x1000		! 否则将段基地址调整到下一个64K内存开始处
 	mov es,ax
 	xor bx,bx
 	jmp rp_read
@@ -200,24 +200,24 @@ read_track:
 	push bx
 	push cx
 	push dx
-	mov dx,track
-	mov cx,sread
+	mov dx,track		! 将磁道号给寄存器dx
+	mov cx,sread		! 已读扇区数目，cl表示扇区号，ch表示磁道号
 	inc cx
 	mov ch,dl
 	mov dx,head
-	mov dh,dl
-	mov dl,#0
-	and dx,#0x0100
-	mov ah,#2
-	int 0x13
-	jc bad_rt
+	mov dh,dl			! dh表示读取的磁头号
+	mov dl,#0			! dl表示驱动器号，0表示软盘
+	and dx,#0x0100		! 磁头号不大于1
+	mov ah,#2			! ah表示中断的功能号，al表示读取的扇区数
+	int 0x13			! 操作成功，返回ah=0,al表示读取扇区数,CF=0，错误：CF=1
+	jc bad_rt			! 读取错误，jc表示cf=1进行跳转
 	pop dx
 	pop cx
 	pop bx
 	pop ax
 	ret
-bad_rt:	mov ax,#0
-	mov dx,#0
+bad_rt:	mov ax,#0		! 扇区读取失败的情况
+	mov dx,#0			! ah中断号为0，dl表示软盘，重置磁盘，然后跳转到read_track执行
 	int 0x13
 	pop dx
 	pop cx
